@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Page Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/jquery.mobile-1.4.5.css"/>
+    <script src="js/jquery.js"></script>
+    <script src="js/index.js"></script>
+    <script src="js/jquery.mobile-1.4.5.js"></script>
+    <script>
+        //init latitude and longitude
+        var latitude = 0;
+        var longitude = 0;
+        app.initialize();
+
+        //init local storage to store data later
+        var itemsArray = [];
+        itemsArray = JSON.parse(localStorage.getItem('items'));
+        if (itemsArray === null) {
+            var itemsArrayInit = [];
+            localStorage.setItem('items', JSON.stringify(itemsArrayInit));
+        }
+        //Get device location
+        navigator.geolocation.getCurrentPosition(onSuccess, onError);
+        function onSuccess(position) {
+            latitude = position.coords.latitude;
+            longitude = position.coords.longitude;
+            document.getElementById("latitudeLabel").innerHTML = latitude;
+            document.getElementById("longitudeLabel").innerHTML = longitude;
+            alert("Device latitude and longitude: " + position.coords.latitude + " " + position.coords.longitude);
+            //Use google geocode to get city and country
+            $.ajax({
+                type: "GET",
+                url: "https://maps.googleapis.com/maps/api/geocode/json?latlng=" + latitude + "," + longitude + "&key=AIzaSyCizhowq7rRRmz_EeI1-HMYg4vyix62tvY",
+                contentType: "application/json; charset=utf-8",
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'withCredentials': 'true',
+                },
+                dataType: "json",
+                success: function (data) {
+                    //Extract location from google response
+                    var locationName = "";
+                    for (var i = 0; i < data.results[0].address_components.length; i++) {
+                        for (var j = 0; j < data.results[0].address_components[i].types.length; j++) {
+                            if (data.results[0].address_components[i].types[j] === "locality") {
+                                locationName = locationName + " " + data.results[0].address_components[i].long_name;
+                            }
+                            if (data.results[0].address_components[i].types[j] === "administrative_area_level_1") {
+                                locationName = locationName + " " + data.results[0].address_components[i].long_name;
+                            }
+                            if (data.results[0].address_components[i].types[j] === "country") {
+                                locationName = locationName + " " + data.results[0].address_components[i].long_name;
+                                localStorage.setItem('country', JSON.stringify(data.results[0].address_components[i].long_name));
+                                //Get country currency
+                                $.ajax({
+                                    type: "GET",
+                                    url: "https://restcountries.eu/rest/v2/all",
+                                    contentType: "application/json; charset=utf-8",
+                                    headers: {
+                                        Accept: 'application/json',
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    data: {
+                                        fields: "name;currencies"
+                                    },
+                                    success: function (data) {
+                                        //Extract the local currency from country you are located
+                                        localStorage.setItem('currencies', JSON.stringify(data));
+                                        for (var i = 0; i < data.length; i++) {
+                                            if (JSON.stringify(data[i].name).localeCompare(localStorage.getItem('country')) === 0) {
+                                                localStorage.setItem('country_curency', JSON.stringify(data[i].currencies[0].code));
+                                                document.getElementById("toCurrency").innerHTML = data[i].currencies[0].code;
+                                                document.getElementById("currencyId").innerHTML = data[i].currencies[0].code;
+                                            }
+                                        }
+
+                                    },
+                                    failure: function (errMsg) {
+                                        alert("Failed to retrieve countries and currencies " + errMsg);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    document.getElementById("cityId").innerHTML = locationName;
+                    document.getElementById("latitudeLabel").innerHTML = latitude;
+                    document.getElementById("longitudeLabel").innerHTML = longitude;
+                    console.log(document.getElementById("longitudeLabel"));
+                },
+                failure: function (errMsg) {
+                    alert(errMsg);
+                }
+            });
+        }
+        function onError(error) {
+            alert(error);
+        }
+    </script>
+</head>
+<body>
+<div data-role="page" id="login">
+    <div data-role="header">
+        <h1>Welcome page</h1>
+    </div><!-- /header -->
+    <div role="main" class="ui-content">
+        <form id="loginForm">
+            <table>
+                <tr>
+                    <td><label>Location</label></td>
+                    <td><label id="cityId"></label></td>
+                </tr>
+                <tr>
+                    <td><label>Currency</label></td>
+                    <td><label id="currencyId"></label></td>
+                </tr>
+                <tr>
+                    <td><label>Latitude</label></td>
+                    <td><label id="latitudeLabel"></label></td>
+                </tr>
+                <tr>
+                    <td><label>Longitude</label></td>
+                    <td><label id="longitudeLabel"></label></td>
+                </tr>
+                <tr>
+                    <td><label>Weather</label></td>
+                    <td><label id="weatherId"></label></td>
+                </tr>
+            </table>
+        </form>
+        <button id="weatherData" class="ui-btn" onclick="collectWeatherData()">Gather weather data</button>
+        <a href="#exchange" data-role="button">Exchange</a>
+        <button id="saveData" class="ui-btn" onclick="saveData()">Save Data</button>
+        <button id="showHistory" class="ui-btn" onclick="showHideHistoryData()">Show History</button>
+        <button id="hideHistory" class="ui-btn" style="visibility: hidden">Hide History</button>
+        <table id="historyTable" data-role="table" data-mode="columntoggle"
+               class="ui-responsive table-stroke ui-table ui-table-columntoggle">
+            <thead>
+            <tr>
+                <th>Date</th>
+                <th>Location</th>
+                <th>Weather</th>
+            </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+    <script>
+        //Save in local storage the gather data
+        function saveData() {
+            var storageData = [];
+            storageData = JSON.parse(localStorage.getItem('items'));
+            var today = new Date();
+            var date = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
+            var time = today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds();
+            var info = {
+                location: document.getElementById("cityId").textContent,
+                currency: document.getElementById("currencyId").textContent,
+                latitude: document.getElementById("latitudeLabel").textContent,
+                longitude: document.getElementById("longitudeLabel").textContent,
+                weather: document.getElementById("weatherId").textContent,
+                date: date + " " + time
+            };
+            storageData.push(info);
+            localStorage.setItem('items', JSON.stringify(storageData));
+            alert("Data saved successfully");
+
+            //Reset the button after a successful save
+            var button = document.getElementById('showHistory');
+            button.innerHTML = "Show History";
+            var table = document.getElementById("historyTable");
+            var rowLength = table.rows.length;
+            for (var i = 1; i < rowLength; i++) {
+                table.deleteRow(1);
+            }
+        }
+
+        function collectWeatherData() {
+            //Based on lat and long call api to find weather details
+            $.ajax({
+                type: "GET",
+                url: "http://api.openweathermap.org/data/2.5/weather",
+                contentType: "application/json; charset=utf-8",
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                data: {
+                    lat: latitude,
+                    lon: longitude,
+                    APPID: '2898d87049ff71f39e0e20625ba0d281'
+                },
+                //format response data so it can be displayed in a table
+                success: function (data) {
+                    //Transform temperature in celsius
+                    document.getElementById('weatherId').innerHTML = data.weather[0].main + " " + (Math.round((data.main.temp - 273) * 100) / 100) + " C";
+                },
+                failure: function (errMsg) {
+                    alert(errMsg);
+                }
+            });
+            navigator.geolocation.getCurrentPosition(onSuccess, onError);
+        }
+        function showHideHistoryData() {
+            var elem = document.getElementById('showHistory');
+            var button = document.createElement("button");
+            var table = document.getElementById("historyTable");
+            button.setAttribute("id", "showHistory");
+            button.setAttribute("class", "ui-btn");
+            button.setAttribute("onclick", "showHideHistoryData()");
+
+            //Display data stored in local storage
+            if (elem.innerHTML === 'Show History') {
+                button.innerHTML = "Hide History";
+                var storageData = [];
+                storageData = JSON.parse(localStorage.getItem('items'));
+                for (var i = storageData.length - 1; i >= 0; i--) {
+                    var row = table.insertRow(storageData.length - i);
+                    var cell1 = row.insertCell(0);
+                    var cell2 = row.insertCell(1);
+                    var cell3 = row.insertCell(2);
+                    cell1.innerHTML = storageData[i].date;
+                    cell2.innerHTML = storageData[i].location;
+                    cell3.innerHTML = storageData[i].weather;
+                }
+                //Reset the button and hide data
+            } else {
+                button.innerHTML = "Show History";
+                var rowLength = table.rows.length;
+                for (var i = 1; i < rowLength; i++) {
+                    table.deleteRow(1);
+                }
+            }
+            elem.parentNode.replaceChild(button, elem);
+        }
+    </script>
+</div>
+<div data-role="page" id="exchange">
+    <div data-role="header">
+        <h1>Exchange Money</h1>
+    </div>
+    <div role="main" class="ui-responsive">
+        <table>
+            <tr>
+                <td><label>Amount</label></td>
+                <td width="20"></td>
+                <td width="50"><label>From</label></td>
+                <td></td>
+                <td><label>To</label></td>
+            </tr>
+            <tr>
+                <td width="100"><input type="number" name="textinput-s" id="moneyAmount" data-clear-btn="true"></td>
+                <td width="20"></td>
+                <td width="50"><label id="fromCurrency">USD</label></td>
+                <td onclick="switchCurrency()">
+                    <svg width="50px" height="47px" viewBox="0 0 50 47" version="1.1" xmlns="http://www.w3.org/2000/svg"
+                         aria-label="Inverse button" role="img">
+                        <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                            <g transform="translate(-297.000000, -595.000000)" fill="#000000">
+                                <g transform="translate(50.000000, 394.000000)">
+                                    <g transform="translate(247.000000, 201.000000)">
+                                        <g transform="translate(7.142857, 25.000000)">
+                                            <polygon
+                                                    points="42.7539856 10.9773747 19.455409 0 19.455409 7.87415338 0 7.87415338 0 14.080596 19.455409 14.080596 19.455409 21.9547493"></polygon>
+                                        </g>
+                                        <g transform="translate(21.428571, 11.309524) rotate(-180.000000) translate(-21.428571, -11.309524) ">
+                                            <polygon
+                                                    points="42.7539856 10.9773747 19.455409 0 19.455409 7.87415338 0 7.87415338 0 14.080596 19.455409 14.080596 19.455409 21.9547493"></polygon>
+                                        </g>
+                                    </g>
+                                </g>
+                            </g>
+                        </g>
+                    </svg>
+                </td>
+                <td><label id="toCurrency"></label></td>
+            </tr>
+        </table>
+        <label id="valueConverted" style="visibility: hidden">Value: </label>
+        <button id="convertMoney" class="ui-btn" onclick="convertMoney()">Convert</button>
+    </div>
+    <script>
+        function convertMoney() {
+            //Request the exchange rate of the country you are in currency
+            $.ajax({
+                type: "GET",
+                url: "https://api.exchangeratesapi.io/latest",
+                contentType: "application/json; charset=utf-8",
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                data: {
+                    symbols: document.getElementById("toCurrency").textContent,
+                    base: document.getElementById("fromCurrency").textContent
+                },
+                success: function (data) {
+                    //Extract the exchange rate and calculate the value
+                    var valueConverted = document.getElementById("valueConverted");
+                    valueConverted.style.visibility = 'visible';
+                    document.getElementById('valueConverted').innerHTML = (Math.round((document.getElementById("moneyAmount").value * data.rates[Object.keys(data.rates)[0]]) * 100) / 100);
+                },
+                failure: function (errMsg) {
+                    alert(errMsg);
+                }
+            });
+        }
+        //Switch currencies
+        function switchCurrency() {
+            var fromCurrency = document.getElementById("fromCurrency").textContent;
+            var toCurrency = document.getElementById("toCurrency").textContent;
+            var temp = fromCurrency;
+            document.getElementById("fromCurrency").innerHTML = toCurrency;
+            document.getElementById("toCurrency").innerHTML = temp;
+        }
+    </script>
+</div>
+</body>
+</html>
